@@ -70,7 +70,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     counter.current += 1;
     const id = `q-${counter.current}`;
     const server = settingsRef.current.serverUrl.replace(/\/$/, "");
-    setQueue((q) => [{ id, url, title, source, format, status: server ? "downloading" : "queued", progress: 0, speedMbps: 0, addedAt: Date.now() }, ...q]);
+    setQueue((q) => [{ id, url, title, source, format, status: server ? "downloading" : "error", error: server ? undefined : "No download server set. Add one in Settings.", progress: 0, speedMbps: 0, addedAt: Date.now() }, ...q]);
     if (!server) return;
     // Real download through the yt-dlp server
     fetch(`${server}/api/jobs`, {
