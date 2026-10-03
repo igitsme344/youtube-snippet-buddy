@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { searchYouTube } from "@/lib/search.functions";
 import { Download, Play, Search } from "lucide-react";
 import { AppShell } from "@/components/app/AppShell";
 import { useDownloadAction } from "@/components/app/DownloadDialog";
@@ -33,10 +36,17 @@ function BrowsePage() {
     ? { id: pastedId, title: "Pasted link", artist: q.includes("music.youtube") ? "YouTube Music" : "YouTube", kind: q.includes("music.youtube") ? "music" : "video" }
     : null;
 
-  const list = useMemo(() => {
-    const s = q.toLowerCase().trim();
-    return CATALOG.filter((t) => t.kind === tab && (!s || `${t.title} ${t.artist}`.toLowerCase().includes(s)));
-  }, [q, tab]);
+  const [debounced, setDebounced] = useState("");
+  useEffect(() => { const t = setTimeout(() => setDebounced(q.trim()), 400); return () => clearTimeout(t); }, [q]);
+  const searchFn = useServerFn(searchYouTube);
+  const searching = !!debounced && !pastedId;
+  const results = useQuery({
+    queryKey: ["yt-search", tab, debounced],
+    queryFn: () => searchFn({ data: { q: debounced, kind: tab } }),
+    enabled: searching,
+    staleTime: 5 * 60_000,
+  });
+  const list = useMemo(() => (searching ? results.data ?? [] : CATALOG.filter((t) => t.kind === tab)), [searching, results.data, tab]);
 
   return (
     <AppShell>
@@ -71,7 +81,9 @@ function BrowsePage() {
         ))}
       </div>
 
-      <h2 className="mt-6 font-display text-xl font-bold">{tab === "music" ? "Trending songs" : "Popular videos"}</h2>
+      <h2 className="mt-6 font-display text-xl font-bold">{searching ? `Results for "${debounced}"` : tab === "music" ? "Trending songs" : "Popular videos"}</h2>
+      {searching && results.isLoading && <p className="mt-4 text-sm text-muted-foreground">Searching…</p>}
+      {results.isError && searching && <p className="mt-4 text-sm text-destructive">Search failed. Try again.</p>}
       <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {list.map((t) => (
           <div key={t.id} className="group overflow-hidden rounded-2xl border border-border bg-card">
@@ -92,7 +104,7 @@ function BrowsePage() {
             </div>
           </div>
         ))}
-        {list.length === 0 && <p className="col-span-full text-sm text-muted-foreground">No matches. Paste a YouTube link to play or download any video.</p>}
+        {list.length === 0 && !results.isLoading && <p className="col-span-full text-sm text-muted-foreground">No results. Paste a YouTube link to play or download any video.</p>}
       </div>
     </AppShell>
   );
