@@ -28,7 +28,7 @@ export const searchYouTube = createServerFn({ method: "GET" })
       query: data.q,
     };
     // YouTube Music: filter to songs
-    if (data.kind === "music") body.params = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D";
+    if (data.kind === "music") body["params"] = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D";
     const res = await fetch(`${c.host}/youtubei/v1/search?prettyPrint=false`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Origin: c.host, Referer: `${c.host}/`, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" },

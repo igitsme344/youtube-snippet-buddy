@@ -16,7 +16,7 @@ const KEY = "ytg-settings-v1";
 export const findFormat = (id: string): FormatOption =>
   [...VIDEO_FORMATS, ...AUDIO_FORMATS].find((f) => f.id === id) ?? AUDIO_FORMATS[0]!;
 
-interface Item extends QueueItem { jobId?: string; error?: string; fileUrl?: string }
+interface Item extends QueueItem { jobId?: string; error?: string | undefined; fileUrl?: string }
 
 interface Ctx {
   settings: Settings;
