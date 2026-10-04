@@ -58,3 +58,64 @@ export const searchYouTube = createServerFn({ method: "GET" })
     }
     return out.slice(0, 40);
   });
+
+export interface PlaylistInfo { id: string; title: string; author: string; count: string; thumb: string }
+
+const WEB_CTX = { client: { clientName: "WEB", clientVersion: "2.20250101.00.00", hl: "en", gl: "US" } };
+const lockupMeta = (l: any) => l?.metadata?.lockupMetadataViewModel;
+const firstSrc = (l: any): string =>
+  l?.contentImage?.collectionThumbnailViewModel?.primaryThumbnail?.thumbnailViewModel?.image?.sources?.[0]?.url ??
+  l?.contentImage?.thumbnailViewModel?.image?.sources?.[0]?.url ?? "";
+
+async function yt(path: string, body: Record<string, unknown>) {
+  const res = await fetch(`https://www.youtube.com/youtubei/v1/${path}?prettyPrint=false`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ context: WEB_CTX, ...body }),
+  });
+  if (!res.ok) throw new Error(`YouTube request failed (${res.status})`);
+  return res.json();
+}
+
+export const searchPlaylists = createServerFn({ method: "GET" })
+  .inputValidator((d) => z.object({ q: z.string().min(1).max(200) }).parse(d))
+  .handler(async ({ data }): Promise<PlaylistInfo[]> => {
+    const json = await yt("search", { query: data.q, params: "EgIQAw%3D%3D" });
+    const out: PlaylistInfo[] = [];
+    for (const l of collect(json, "lockupViewModel")) {
+      if (l?.contentType !== "LOCKUP_CONTENT_TYPE_PLAYLIST" && l?.contentType !== "LOCKUP_CONTENT_TYPE_ALBUM") continue;
+      const m = lockupMeta(l);
+      const badge = collect(l, "thumbnailBadgeViewModel")[0]?.text ?? "";
+      out.push({
+        id: l.contentId,
+        title: m?.title?.content ?? "Playlist",
+        author: m?.metadata?.contentMetadataViewModel?.metadataRows?.[0]?.metadataParts?.[0]?.text?.content ?? "",
+        count: badge,
+        thumb: firstSrc(l),
+      });
+    }
+    return out.slice(0, 30);
+  });
+
+export const getPlaylist = createServerFn({ method: "GET" })
+  .inputValidator((d) => z.object({ id: z.string().regex(/^[\w-]{10,64}$/) }).parse(d))
+  .handler(async ({ data }): Promise<{ title: string; tracks: Track[] }> => {
+    const json = await yt("browse", { browseId: `VL${data.id}` });
+    const title = collect(json, "playlistMetadataRenderer")[0]?.title ?? "Playlist";
+    const tracks: Track[] = [];
+    const seen = new Set<string>();
+    for (const l of collect(json, "lockupViewModel")) {
+      const id = l?.contentId;
+      if (!id || !/^[\w-]{11}$/.test(id) || seen.has(id)) continue;
+      seen.add(id);
+      const m = lockupMeta(l);
+      const artist = m?.metadata?.contentMetadataViewModel?.metadataRows?.[0]?.metadataParts?.[0]?.text?.content ?? "";
+      tracks.push({ id, title: m?.title?.content ?? "", artist, kind: "music" });
+    }
+    for (const v of collect(json, "playlistVideoRenderer")) {
+      if (!v?.videoId || seen.has(v.videoId)) continue;
+      seen.add(v.videoId);
+      tracks.push({ id: v.videoId, title: text(v.title), artist: text(v.shortBylineText), kind: "music" });
+    }
+    return { title, tracks };
+  });
