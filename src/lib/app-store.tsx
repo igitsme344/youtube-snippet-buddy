@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { AUDIO_FORMATS, VIDEO_FORMATS, detectSource, type FormatOption, type MediaMode, type QueueItem } from "./grabber";
-import type { Track } from "./catalog";
+import { parseYouTubeId, type Track } from "./catalog";
+import { deleteItem, fetchMedia, listItems, saveItem, type SavedItem } from "./offline";
 
 export interface Settings {
   serverUrl: string;
@@ -27,6 +28,10 @@ interface Ctx {
   enqueue: (url: string, title: string, format: FormatOption) => void;
   remove: (id: string) => void;
   clearDone: () => void;
+  library: Omit<SavedItem, "blob">[];
+  removeSaved: (key: string) => void;
+  playQueue: Track[];
+  setPlayQueue: (t: Track[]) => void;
 }
 
 const AppCtx = createContext<Ctx | null>(null);
@@ -43,6 +48,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
   const [current, setCurrent] = useState<Track | null>(null);
   const [queue, setQueue] = useState<Item[]>([]);
+  const [library, setLibrary] = useState<Omit<SavedItem, "blob">[]>([]);
+  const [playQueue, setPlayQueue] = useState<Track[]>([]);
+  const refreshLib = useCallback(() => {
+    listItems().then((l) => setLibrary(l.map(({ blob: _b, ...r }) => r).sort((a, b) => b.savedAt - a.savedAt))).catch(() => {});
+  }, []);
+  useEffect(refreshLib, [refreshLib]);
   const counter = useRef(0);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -70,8 +81,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     counter.current += 1;
     const id = `q-${counter.current}`;
     const server = settingsRef.current.serverUrl.replace(/\/$/, "");
-    setQueue((q) => [{ id, url, title, source, format, status: server ? "downloading" : "error", error: server ? undefined : "No download server set. Add one in Settings.", progress: 0, speedMbps: 0, addedAt: Date.now() }, ...q]);
-    if (!server) return;
+    if (!server) {
+      // Built-in download: stream through our server and save on this device
+      const vid = parseYouTubeId(url);
+      setQueue((q) => [{ id, url, title, source, format, status: vid ? "downloading" : "error", error: vid ? undefined : "Not a YouTube link", progress: 0, speedMbps: 0, addedAt: Date.now() }, ...q]);
+      if (!vid) return;
+      const type = format.mode === "audio" ? "audio" : "video";
+      const [artist, ...rest] = title.split(" — ");
+      const t0 = Date.now();
+      fetchMedia(vid, type, (p) => patch(id, { progress: p }))
+        .then(async (blob) => {
+          patch(id, { status: "processing", speedMbps: blob.size / 1e6 / ((Date.now() - t0) / 1000) * 8 });
+          await saveItem({ key: `${vid}:${type}`, id: vid, title: rest.length ? rest.join(" — ") : title, artist: rest.length ? artist! : "", type, blob, savedAt: Date.now() });
+          patch(id, { status: "done", progress: 100 });
+          refreshLib();
+        })
+        .catch((e) => patch(id, { status: "error", error: String(e.message || e) }));
+      return;
+    }
+    setQueue((q) => [{ id, url, title, source, format, status: "downloading", progress: 0, speedMbps: 0, addedAt: Date.now() }, ...q]);
     // Real download through the yt-dlp server
     fetch(`${server}/api/jobs`, {
       method: "POST",
@@ -106,34 +134,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .catch((e) => patch(id, { status: "error", error: String(e.message || e) }));
   }, []);
 
-  // Demo mode engine (no server configured)
-  useEffect(() => {
-    const t = setInterval(() => {
-      setQueue((items) => {
-        const ai = items.findIndex((i) => !i.jobId && i.status === "processing");
-        if (ai !== -1) return items.map((i, k) => (k === ai ? { ...i, status: "done" } : i));
-        const di = items.findIndex((i) => i.status === "downloading" && !settingsRef.current.serverUrl);
-        if (di !== -1) {
-          return items.map((i, k) => {
-            if (k !== di) return i;
-            const p = i.progress + 3 + Math.random() * 7;
-            return p >= 100 ? { ...i, status: "processing", progress: 100 } : { ...i, progress: p, speedMbps: 4 + Math.random() * 18 };
-          });
-        }
-        const qi = items.findIndex((i) => i.status === "queued");
-        if (qi === -1) return items;
-        return items.map((i, k) => (k === qi ? { ...i, status: "downloading" } : i));
-      });
-    }, 350);
-    return () => clearInterval(t);
-  }, []);
-
   return (
     <AppCtx.Provider
       value={{
         settings, updateSettings, current, play: setCurrent, queue, enqueue,
         remove: (id) => setQueue((q) => q.filter((i) => i.id !== id)),
         clearDone: () => setQueue((q) => q.filter((i) => i.status !== "done")),
+        library, playQueue, setPlayQueue,
+        removeSaved: (key) => { deleteItem(key).then(refreshLib); },
       }}
     >
       {children}

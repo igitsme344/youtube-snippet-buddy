@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DownloadsRouteImport } from './routes/downloads'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ApiPublicStreamRouteImport } from './routes/api/public/stream'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -28,35 +29,44 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicStreamRoute = ApiPublicStreamRouteImport.update({
+  id: '/api/public/stream',
+  path: '/api/public/stream',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/downloads': typeof DownloadsRoute
   '/settings': typeof SettingsRoute
+  '/api/public/stream': typeof ApiPublicStreamRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/downloads': typeof DownloadsRoute
   '/settings': typeof SettingsRoute
+  '/api/public/stream': typeof ApiPublicStreamRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/downloads': typeof DownloadsRoute
   '/settings': typeof SettingsRoute
+  '/api/public/stream': typeof ApiPublicStreamRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/downloads' | '/settings'
+  fullPaths: '/' | '/downloads' | '/settings' | '/api/public/stream'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/downloads' | '/settings'
-  id: '__root__' | '/' | '/downloads' | '/settings'
+  to: '/' | '/downloads' | '/settings' | '/api/public/stream'
+  id: '__root__' | '/' | '/downloads' | '/settings' | '/api/public/stream'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DownloadsRoute: typeof DownloadsRoute
   SettingsRoute: typeof SettingsRoute
+  ApiPublicStreamRoute: typeof ApiPublicStreamRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/stream': {
+      id: '/api/public/stream'
+      path: '/api/public/stream'
+      fullPath: '/api/public/stream'
+      preLoaderRoute: typeof ApiPublicStreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DownloadsRoute: DownloadsRoute,
   SettingsRoute: SettingsRoute,
+  ApiPublicStreamRoute: ApiPublicStreamRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
