@@ -1,9 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { searchYouTube } from "@/lib/search.functions";
-import { Download, Play, Search } from "lucide-react";
+import { searchPlaylists, searchYouTube } from "@/lib/search.functions";
+import { Download, ListMusic, Play, Search } from "lucide-react";
 import { AppShell } from "@/components/app/AppShell";
 import { useDownloadAction } from "@/components/app/DownloadDialog";
 import { useApp } from "@/lib/app-store";
@@ -23,10 +23,10 @@ export const Route = createFileRoute("/")({
   component: BrowsePage,
 });
 
-type Tab = "music" | "video";
+type Tab = "music" | "video" | "playlists";
 
 function BrowsePage() {
-  const { play } = useApp();
+  const { play, setPlayQueue } = useApp();
   const { start, dialog } = useDownloadAction();
   const [tab, setTab] = useState<Tab>("music");
   const [q, setQ] = useState("");
@@ -42,8 +42,16 @@ function BrowsePage() {
   const searching = !!debounced && !pastedId;
   const results = useQuery({
     queryKey: ["yt-search", tab, debounced],
-    queryFn: () => searchFn({ data: { q: debounced, kind: tab } }),
-    enabled: searching,
+    queryFn: () => searchFn({ data: { q: debounced, kind: tab === "video" ? "video" : "music" } }),
+    enabled: searching && tab !== "playlists",
+    staleTime: 5 * 60_000,
+  });
+  const plFn = useServerFn(searchPlaylists);
+  const plQuery = debounced && !pastedId ? debounced : tab === "playlists" ? "top hits" : "";
+  const playlists = useQuery({
+    queryKey: ["yt-playlists", plQuery],
+    queryFn: () => plFn({ data: { q: plQuery } }),
+    enabled: tab === "playlists" && !!plQuery,
     staleTime: 5 * 60_000,
   });
   const list = useMemo(() => (searching ? results.data ?? [] : CATALOG.filter((t) => t.kind === tab)), [searching, results.data, tab]);
@@ -74,20 +82,41 @@ function BrowsePage() {
       )}
 
       <div className="mt-6 flex gap-2">
-        {(["music", "video"] as Tab[]).map((t) => (
+        {(["music", "video", "playlists"] as Tab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={`rounded-full px-4 py-2 text-sm font-medium transition ${tab === t ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}>
-            {t === "music" ? "YouTube Music" : "YouTube"}
+            {t === "music" ? "YouTube Music" : t === "video" ? "YouTube" : "Playlists"}
           </button>
         ))}
       </div>
 
+      {tab === "playlists" ? (
+        <>
+          <h2 className="mt-6 font-display text-xl font-bold">{debounced ? `Playlists for "${debounced}"` : "Popular playlists"}</h2>
+          {playlists.isLoading && <p className="mt-4 text-sm text-muted-foreground">Searching…</p>}
+          {playlists.isError && <p className="mt-4 text-sm text-destructive">Search failed. Try again.</p>}
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {(playlists.data ?? []).map((p) => (
+              <Link key={p.id} to="/playlist/$id" params={{ id: p.id }} className="group overflow-hidden rounded-2xl border border-border bg-card">
+                <div className="relative aspect-video overflow-hidden">
+                  {p.thumb && <img src={p.thumb} alt={p.title} loading="lazy" className="size-full object-cover transition group-hover:scale-105" />}
+                  <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 text-xs"><ListMusic className="size-3" />{p.count}</span>
+                </div>
+                <div className="p-3">
+                  <p className="truncate text-sm font-semibold">{p.title}</p>
+                  <p className="truncate text-xs text-muted-foreground">{p.author}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </>
+      ) : (<>
       <h2 className="mt-6 font-display text-xl font-bold">{searching ? `Results for "${debounced}"` : tab === "music" ? "Trending songs" : "Popular videos"}</h2>
       {searching && results.isLoading && <p className="mt-4 text-sm text-muted-foreground">Searching…</p>}
       {results.isError && searching && <p className="mt-4 text-sm text-destructive">Search failed. Try again.</p>}
       <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {list.map((t) => (
           <div key={t.id} className="group overflow-hidden rounded-2xl border border-border bg-card">
-            <button onClick={() => play(t)} className="relative block aspect-video w-full overflow-hidden">
+            <button onClick={() => { setPlayQueue(list); play(t); }} className="relative block aspect-video w-full overflow-hidden">
               <img src={thumb(t.id)} alt={t.title} loading="lazy" className="size-full object-cover transition group-hover:scale-105" />
               <span className="absolute inset-0 flex items-center justify-center bg-background/40 opacity-0 transition group-hover:opacity-100">
                 <Play className="size-10 fill-primary text-primary" />
@@ -106,6 +135,7 @@ function BrowsePage() {
         ))}
         {list.length === 0 && !results.isLoading && <p className="col-span-full text-sm text-muted-foreground">No results. Paste a YouTube link to play or download any video.</p>}
       </div>
+      </>)}
     </AppShell>
   );
 }
